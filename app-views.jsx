@@ -57,7 +57,8 @@ function Ring({ pct, accent, track, size = 56, stroke = 5 }) {
 // ═══════════════════════════════════════════════════════════
 // NOW VIEW — main timer screen
 // ═══════════════════════════════════════════════════════════
-function NowView({ state, actions, theme, now, onSwitchProject, onEditWeekBudget }) {
+function NowView({ state, actions, theme, now, layout = {}, onSwitchProject, onEditWeekBudget }) {
+  const show = (key) => layout[key] !== false;
   const running = !!state.timer.startedAt;
   const paused = !!state.timer.pausedAt;
   const active = running || paused;
@@ -149,57 +150,64 @@ function NowView({ state, actions, theme, now, onSwitchProject, onEditWeekBudget
       </Tile>
 
       {/* Note input */}
-      <Tile theme={theme} pad="0">
-        <input
-          value={state.timer.note}
-          onChange={(e) => actions.setNote(e.target.value)}
-          placeholder="What are you working on?"
-          style={{
-            width: "100%",
-            background: "transparent",
-            border: "none",
-            outline: "none",
-            fontFamily: "inherit",
-            fontSize: 14,
-            color: theme.text,
-            padding: "14px 18px",
-          }}
-        />
-      </Tile>
-
-      {/* 2-up: today + week ring */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr", gap: 12 }}>
-        <Tile theme={theme}>
-          <Label color={theme.muted}>Today</Label>
-          <div style={{ fontSize: 46, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums", marginTop: 12 }}>
-            {todayHours.toFixed(1)}<span style={{ fontSize: 18, fontWeight: 500, color: theme.muted, marginLeft: 4 }}>h</span>
-          </div>
-          <div style={{ fontSize: 11, color: theme.muted, marginTop: 6 }}>
-            {todayEntries.length + (running ? 1 : 0)} {(todayEntries.length + (running ? 1 : 0)) === 1 ? "session" : "sessions"} · ${todayEarnings.toFixed(0)}
-          </div>
+      {show("note") && (
+        <Tile theme={theme} pad="0">
+          <input
+            value={state.timer.note}
+            onChange={(e) => actions.setNote(e.target.value)}
+            placeholder="What are you working on?"
+            style={{
+              width: "100%",
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              fontFamily: "inherit",
+              fontSize: 14,
+              color: theme.text,
+              padding: "14px 18px",
+            }}
+          />
         </Tile>
+      )}
 
-        <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={onEditWeekBudget}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Label color="rgba(255,255,255,0.5)">Week</Label>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 2l2 2-6 6H3V8l6-6z"/>
-            </svg>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-            <Ring pct={weekPct} accent={weekColor} track="rgba(255,255,255,0.15)" size={58} />
-            <div>
-              <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                {weekHours.toFixed(1)}
+      {/* Today + Week row */}
+      {(show("today") || show("week")) && (
+        <div style={{ display: "grid", gridTemplateColumns: show("today") && show("week") ? "1.35fr 1fr" : "1fr", gap: 12 }}>
+          {show("today") && (
+            <Tile theme={theme}>
+              <Label color={theme.muted}>Today</Label>
+              <div style={{ fontSize: 46, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums", marginTop: 12 }}>
+                {todayHours.toFixed(1)}<span style={{ fontSize: 18, fontWeight: 500, color: theme.muted, marginLeft: 4 }}>h</span>
               </div>
-              <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {weeklyBudget}h</div>
-            </div>
-          </div>
-        </Tile>
-      </div>
+              <div style={{ fontSize: 11, color: theme.muted, marginTop: 6 }}>
+                {todayEntries.length + (running ? 1 : 0)} {(todayEntries.length + (running ? 1 : 0)) === 1 ? "session" : "sessions"} · ${todayEarnings.toFixed(0)}
+              </div>
+            </Tile>
+          )}
+          {show("week") && (
+            <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={onEditWeekBudget}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <Label color="rgba(255,255,255,0.5)">Week</Label>
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 2l2 2-6 6H3V8l6-6z"/>
+                </svg>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+                <Ring pct={weekPct} accent={weekColor} track="rgba(255,255,255,0.15)" size={58} />
+                <div>
+                  <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                    {weekHours.toFixed(1)}
+                  </div>
+                  <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {weeklyBudget}h</div>
+                </div>
+              </div>
+            </Tile>
+          )}
+        </div>
+      )}
 
       {/* Month ring — only shown when a monthly budget is set */}
-      {monthlyBudget != null && (
+      {show("month") && monthlyBudget != null && (
         <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={onEditWeekBudget}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <Label color="rgba(255,255,255,0.5)">Month</Label>
@@ -226,7 +234,7 @@ function NowView({ state, actions, theme, now, onSwitchProject, onEditWeekBudget
       )}
 
       {/* Week activity bars */}
-      <Tile theme={theme} style={{ minHeight: 130 }}>
+      {show("weekActivity") && <Tile theme={theme} style={{ minHeight: 130 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
           <Label color={theme.muted}>Week activity</Label>
           <span style={{ fontSize: 11, color: theme.muted }}>Mon — Sun</span>
@@ -250,7 +258,7 @@ function NowView({ state, actions, theme, now, onSwitchProject, onEditWeekBudget
             );
           })}
         </div>
-      </Tile>
+      </Tile>}
 
       {/* START / PAUSE / RESUME / STOP */}
       {!active && (
@@ -688,4 +696,67 @@ function BudgetEditor({ state, actions, theme, onClose }) {
   );
 }
 
-Object.assign(window, { NowView, ProjectsView, HistoryView, ProjectPicker, BudgetEditor, useTheme });
+// ═══════════════════════════════════════════════════════════
+// LAYOUT EDITOR — toggle blocks on/off
+// ═══════════════════════════════════════════════════════════
+function LayoutEditor({ layout, onToggle, theme, onClose }) {
+  const blocks = [
+    { key: "note",        label: "Note input",      desc: "What are you working on?" },
+    { key: "today",       label: "Today",           desc: "Hours and earnings today" },
+    { key: "week",        label: "Week",            desc: "Weekly progress ring" },
+    { key: "month",       label: "Month",           desc: "Monthly retainer progress" },
+    { key: "weekActivity",label: "Week activity",   desc: "Daily bar chart" },
+  ];
+  const isOn = (key) => layout[key] !== false;
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+      zIndex: 100, animation: "tt-fade-in 200ms ease-out",
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 460,
+        background: theme.bg, color: theme.text,
+        borderRadius: "20px 20px 0 0",
+        padding: "16px 16px 32px",
+        animation: "tt-slide-up 240ms cubic-bezier(0.2, 0.9, 0.3, 1)",
+        boxShadow: "0 -10px 40px rgba(0,0,0,0.3)",
+      }}>
+        <div style={{ width: 36, height: 4, background: theme.line, borderRadius: 2, margin: "0 auto 16px" }} />
+        <h3 style={{ margin: "0 4px 4px", fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>Customize layout</h3>
+        <p style={{ margin: "0 4px 16px", fontSize: 12, color: theme.muted }}>Show or hide blocks on the Now screen.</p>
+        <Tile theme={theme} pad="0">
+          {blocks.map((b, i) => (
+            <div key={b.key} onClick={() => onToggle(b.key)} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "13px 16px",
+              borderTop: i === 0 ? "none" : `1px solid ${theme.line}`,
+              cursor: "pointer",
+            }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>{b.label}</div>
+                <div style={{ fontSize: 11, color: theme.muted, marginTop: 2 }}>{b.desc}</div>
+              </div>
+              <div style={{
+                width: 36, height: 20, borderRadius: 999,
+                background: isOn(b.key) ? theme.accent : theme.line,
+                position: "relative", transition: "background 0.15s", flexShrink: 0,
+              }}>
+                <div style={{
+                  position: "absolute", top: 3, left: isOn(b.key) ? 19 : 3,
+                  width: 14, height: 14, borderRadius: "50%", background: "#fff",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  transition: "left 0.15s",
+                }} />
+              </div>
+            </div>
+          ))}
+        </Tile>
+        <button onClick={onClose} style={{ ...btnPrimary(theme), marginTop: 16, width: "100%", height: 46 }}>Done</button>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { NowView, ProjectsView, HistoryView, ProjectPicker, BudgetEditor, LayoutEditor, useTheme });

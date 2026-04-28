@@ -159,7 +159,17 @@
       const [tab, setTab] = useState("now");
       const [picker, setPicker] = useState(false);
       const [budgetEdit, setBudgetEdit] = useState(false);
+      const [layoutEdit, setLayoutEdit] = useState(false);
+      const [layout, setLayout] = useState(() => {
+        try { return JSON.parse(localStorage.getItem("tt_layout") || "{}"); } catch { return {}; }
+      });
       const [menu, setMenu] = useState(false);
+
+      const toggleBlock = (key) => {
+        const next = { ...layout, [key]: layout[key] === false ? true : false };
+        setLayout(next);
+        try { localStorage.setItem("tt_layout", JSON.stringify(next)); } catch {}
+      };
 
       const [now, setNow] = useState(Date.now());
       useEffect(() => {
@@ -196,6 +206,11 @@
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Time Tracker</span>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
+                {tab === "now" && (
+                  <button onClick={() => setLayoutEdit(true)} style={iconBtn(t)} title="Customize layout">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="8" y="1" width="5" height="5" rx="1"/><rect x="1" y="8" width="5" height="5" rx="1"/><rect x="8" y="8" width="5" height="5" rx="1"/></svg>
+                  </button>
+                )}
                 <button onClick={() => setThemeMode(dark ? "light" : "dark")} style={iconBtn(t)} title="Toggle theme">
                   {dark ? (
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="7" r="3"/><g stroke="currentColor" strokeWidth="1.2"><path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.5 2.5l1 1M10.5 10.5l1 1M2.5 11.5l1-1M10.5 3.5l1-1"/></g></svg>
@@ -238,12 +253,13 @@
               </div>
             )}
 
-            {tab === "now" && <NowView state={state} actions={actions} theme={t} now={now} onSwitchProject={() => setPicker(true)} onEditWeekBudget={() => setBudgetEdit(true)} />}
+            {tab === "now" && <NowView state={state} actions={actions} theme={t} now={now} layout={layout} onSwitchProject={() => setPicker(true)} onEditWeekBudget={() => setBudgetEdit(true)} />}
             {tab === "projects" && <ProjectsView state={state} actions={actions} theme={t} />}
             {tab === "history" && <HistoryView state={state} actions={actions} theme={t} />}
 
             {picker && <ProjectPicker state={state} actions={actions} theme={t} onClose={() => setPicker(false)} />}
             {budgetEdit && <BudgetEditor state={state} actions={actions} theme={t} onClose={() => setBudgetEdit(false)} />}
+            {layoutEdit && <LayoutEditor layout={layout} onToggle={toggleBlock} theme={t} onClose={() => setLayoutEdit(false)} />}
           </div>
 
           <div style={{
