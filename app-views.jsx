@@ -57,26 +57,33 @@ function Ring({ pct, accent, track, size = 56, stroke = 5 }) {
 // ═══════════════════════════════════════════════════════════
 // NOW VIEW — main timer screen
 // ═══════════════════════════════════════════════════════════
-function NowView({ state, actions, theme, now, onSwitchProject }) {
+function NowView({ state, actions, theme, now, onSwitchProject, onEditWeekBudget }) {
   const running = !!state.timer.startedAt;
+  const paused = !!state.timer.pausedAt;
+  const active = running || paused;
   const project = state.projects.find((p) => p.id === state.timer.projectId) || state.projects[0];
-  const elapsed = running ? now - state.timer.startedAt : 0;
+  // Live elapsed = accumulated + (running ? now - startedAt : 0)
+  const elapsed = (state.timer.accumulatedMs || 0) + (running ? now - state.timer.startedAt : 0);
+  const sessionAnchor = state.timer.originalStart || state.timer.startedAt || state.timer.pausedAt;
 
   // Today's entries
   const todayStart = startOfDay(new Date()).getTime();
   const todayEntries = state.entries.filter((e) => e.start >= todayStart);
-  const todayMs = todayEntries.reduce((sum, e) => sum + entryDuration(e), 0) + (running && state.timer.startedAt >= todayStart ? elapsed : 0);
+  const todayMs = todayEntries.reduce((sum, e) => sum + entryDuration(e), 0) + (active && sessionAnchor >= todayStart ? elapsed : 0);
   const todayHours = todayMs / 3600000;
   const todayEarnings = todayEntries.reduce((sum, e) => {
     const p = state.projects.find((pp) => pp.id === e.projectId);
     return sum + (entryDuration(e) / 3600000) * (p?.rate || 0);
-  }, 0) + (running ? (elapsed / 3600000) * (project?.rate || 0) : 0);
+  }, 0) + (active ? (elapsed / 3600000) * (project?.rate || 0) : 0);
 
   // Week
   const weekStart = startOfWeek(new Date(), state.weekStart || 1).getTime();
   const weekEntries = state.entries.filter((e) => e.start >= weekStart);
-  const weekMs = weekEntries.reduce((sum, e) => sum + entryDuration(e), 0) + (running && state.timer.startedAt >= weekStart ? elapsed : 0);
+  const weekMs = weekEntries.reduce((sum, e) => sum + entryDuration(e), 0) + (active && sessionAnchor >= weekStart ? elapsed : 0);
   const weekHours = weekMs / 3600000;
+  const weeklyBudget = state.weeklyBudget || 40;
+  const weekPct = weekHours / weeklyBudget;
+  const weekColor = weekPct >= 1 ? "#d44" : weekPct >= 0.8 ? "#e8a23a" : theme.accent;
 
   // 7 days bars
   const dayBars = Array(7).fill(0);
@@ -84,32 +91,33 @@ function NowView({ state, actions, theme, now, onSwitchProject }) {
     const dayIdx = Math.floor((startOfDay(new Date(e.start)).getTime() - weekStart) / 86400000);
     if (dayIdx >= 0 && dayIdx < 7) dayBars[dayIdx] += entryDuration(e) / 3600000;
   }
-  if (running && state.timer.startedAt >= weekStart) {
-    const dayIdx = Math.floor((startOfDay(new Date(state.timer.startedAt)).getTime() - weekStart) / 86400000);
+  if (active && sessionAnchor >= weekStart) {
+    const dayIdx = Math.floor((startOfDay(new Date(sessionAnchor)).getTime() - weekStart) / 86400000);
     if (dayIdx >= 0 && dayIdx < 7) dayBars[dayIdx] += elapsed / 3600000;
   }
   const todayDayIdx = Math.floor((todayStart - weekStart) / 86400000);
 
-  const earnedNow = running ? Math.round((elapsed / 3600000) * (project?.rate || 0)) : 0;
+  const earnedNow = active ? Math.round((elapsed / 3600000) * (project?.rate || 0)) : 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* BIG TIMER TILE */}
-      <Tile theme={theme} bg={running ? theme.accent : theme.ink} fg="#fff" pad="20px 22px">
+      <Tile theme={theme} bg={running ? theme.accent : (paused ? theme.stone : theme.ink)} fg={paused ? theme.text : "#fff"} pad="20px 22px">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{
-              width: 7, height: 7, borderRadius: "50%", background: "#fff",
+              width: 7, height: 7, borderRadius: "50%",
+              background: paused ? theme.muted : "#fff",
               animation: running ? "tt-pulse 1.4s ease-in-out infinite" : "none",
-              opacity: running ? 1 : 0.5,
+              opacity: running ? 1 : 0.6,
             }} />
             <span style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 600 }}>
-              {running ? "Live" : "Idle"}
+              {running ? "Live" : paused ? "Paused" : "Idle"}
             </span>
           </div>
           <button onClick={onSwitchProject} style={{
-            border: "1px solid rgba(255,255,255,0.25)",
-            background: "transparent", color: "#fff",
+            border: `1px solid ${paused ? theme.line : "rgba(255,255,255,0.25)"}`,
+            background: "transparent", color: paused ? theme.text : "#fff",
             padding: "5px 10px", borderRadius: 999,
             fontSize: 11, fontWeight: 500, letterSpacing: "0.02em",
             cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
@@ -126,7 +134,7 @@ function NowView({ state, actions, theme, now, onSwitchProject }) {
         }}>
           {fmtHMS(elapsed)}
         </div>
-        <div style={{ fontSize: 13, opacity: 0.9, fontWeight: 500 }}>
+        <div style={{ fontSize: 13, opacity: paused ? 0.75 : 0.9, fontWeight: 500 }}>
           {project?.client || "—"} · ${project?.rate || 0}/hr · ${earnedNow.toFixed(2)} earned
         </div>
       </Tile>
@@ -162,15 +170,20 @@ function NowView({ state, actions, theme, now, onSwitchProject }) {
           </div>
         </Tile>
 
-        <Tile theme={theme} bg={theme.ink} fg={theme.onInk}>
-          <Label color="rgba(255,255,255,0.5)">Week</Label>
+        <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={onEditWeekBudget}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Label color="rgba(255,255,255,0.5)">Week</Label>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 2l2 2-6 6H3V8l6-6z"/>
+            </svg>
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-            <Ring pct={weekHours / 40} accent={theme.accent} track="rgba(255,255,255,0.15)" size={58} />
+            <Ring pct={weekPct} accent={weekColor} track="rgba(255,255,255,0.15)" size={58} />
             <div>
               <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                 {weekHours.toFixed(1)}
               </div>
-              <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of 40h</div>
+              <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {weeklyBudget}h</div>
             </div>
           </div>
         </Tile>
@@ -203,29 +216,36 @@ function NowView({ state, actions, theme, now, onSwitchProject }) {
         </div>
       </Tile>
 
-      {/* START/STOP */}
-      <button onClick={running ? actions.stopTimer : () => actions.startTimer(state.timer.projectId, state.timer.note)}
-        style={{
-          width: "100%", height: 52, border: "none", borderRadius: 14,
-          background: running ? theme.ink : theme.accent,
-          color: running ? theme.onInk : "#fff",
-          fontSize: 14, fontWeight: 600, letterSpacing: "0.02em",
-          cursor: "pointer", fontFamily: "inherit",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-        }}>
-        {running ? (
-          <><span style={{ width: 11, height: 11, background: theme.onInk, display: "inline-block" }} />Stop timer</>
-        ) : (
-          <>
-            <span style={{ width: 0, height: 0,
-              borderLeft: "11px solid #fff",
-              borderTop: "7px solid transparent",
-              borderBottom: "7px solid transparent",
-              marginLeft: 3 }} />
-            Start timer
-          </>
-        )}
-      </button>
+      {/* START / PAUSE / RESUME / STOP */}
+      {!active && (
+        <button onClick={() => actions.startTimer(state.timer.projectId, state.timer.note)}
+          style={primaryBtn(theme.accent, "#fff")}>
+          <span style={{ width: 0, height: 0, borderLeft: "11px solid #fff", borderTop: "7px solid transparent", borderBottom: "7px solid transparent", marginLeft: 3 }} />
+          Start timer
+        </button>
+      )}
+      {active && (
+        <div style={{ display: "flex", gap: 10 }}>
+          {running ? (
+            <button onClick={actions.pauseTimer} style={{ ...primaryBtn(theme.ink, theme.onInk), flex: 1 }}>
+              <span style={{ display: "flex", gap: 3 }}>
+                <span style={{ width: 4, height: 12, background: theme.onInk }} />
+                <span style={{ width: 4, height: 12, background: theme.onInk }} />
+              </span>
+              Pause
+            </button>
+          ) : (
+            <button onClick={actions.resumeTimer} style={{ ...primaryBtn(theme.accent, "#fff"), flex: 1 }}>
+              <span style={{ width: 0, height: 0, borderLeft: "10px solid #fff", borderTop: "6px solid transparent", borderBottom: "6px solid transparent", marginLeft: 2 }} />
+              Resume
+            </button>
+          )}
+          <button onClick={actions.stopTimer} style={{ ...primaryBtn(paused ? theme.ink : "transparent", paused ? theme.onInk : theme.text), flex: 1, border: paused ? "none" : `1px solid ${theme.line}` }}>
+            <span style={{ width: 11, height: 11, background: paused ? theme.onInk : theme.text, display: "inline-block" }} />
+            Stop & save
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -235,7 +255,7 @@ function NowView({ state, actions, theme, now, onSwitchProject }) {
 // ═══════════════════════════════════════════════════════════
 function ProjectsView({ state, actions, theme }) {
   const [adding, setAdding] = React.useState(false);
-  const [draft, setDraft] = React.useState({ name: "", client: "", rate: state.defaultRate });
+  const [draft, setDraft] = React.useState({ name: "", client: "", rate: state.defaultRate, budgetHours: "" });
 
   // total time per project
   const totals = {};
@@ -260,13 +280,14 @@ function ProjectsView({ state, actions, theme }) {
             <Field theme={theme} label="Project name" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} placeholder="Atlas Identity" autoFocus />
             <Field theme={theme} label="Client" value={draft.client} onChange={(v) => setDraft({ ...draft, client: v })} placeholder="Northwind Studio" />
             <Field theme={theme} label="Rate ($/hr)" type="number" value={draft.rate} onChange={(v) => setDraft({ ...draft, rate: parseFloat(v) || 0 })} />
+            <Field theme={theme} label="Hour budget (optional)" type="number" value={draft.budgetHours} onChange={(v) => setDraft({ ...draft, budgetHours: v })} placeholder="e.g. 20" />
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <button onClick={() => { setAdding(false); setDraft({ name: "", client: "", rate: state.defaultRate }); }} style={btnGhost(theme)}>Cancel</button>
+              <button onClick={() => { setAdding(false); setDraft({ name: "", client: "", rate: state.defaultRate, budgetHours: "" }); }} style={btnGhost(theme)}>Cancel</button>
               <button onClick={() => {
                 if (!draft.name.trim()) return;
-                actions.addProject(draft);
+                actions.addProject({ ...draft, budgetHours: draft.budgetHours !== "" ? parseFloat(draft.budgetHours) : null });
                 setAdding(false);
-                setDraft({ name: "", client: "", rate: state.defaultRate });
+                setDraft({ name: "", client: "", rate: state.defaultRate, budgetHours: "" });
               }} style={btnPrimary(theme)}>Add project</button>
             </div>
           </div>
@@ -288,8 +309,27 @@ function ProjectsView({ state, actions, theme }) {
                   )}
                 </div>
                 <div style={{ fontSize: 12, color: theme.muted, marginTop: 4 }}>
-                  {p.client} · ${p.rate}/hr · {fmtHM(total) || "0m"} total
+                  {p.client} · ${p.rate}/hr · {fmtHM(total) || "0m"} used
                 </div>
+                {p.budgetHours != null && (() => {
+                  const usedH = total / 3600000;
+                  const pct = Math.min(1, usedH / p.budgetHours);
+                  const over = usedH > p.budgetHours;
+                  const barColor = over ? "#d44" : pct >= 0.8 ? "#e8a23a" : theme.accent;
+                  return (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: theme.muted, marginBottom: 4 }}>
+                        <span>Budget</span>
+                        <span style={{ color: over ? "#d44" : theme.muted, fontVariantNumeric: "tabular-nums" }}>
+                          {usedH.toFixed(1)} / {p.budgetHours}h
+                        </span>
+                      </div>
+                      <div style={{ height: 4, background: theme.line, borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ width: `${pct * 100}%`, height: "100%", background: barColor, borderRadius: 2, transition: "width 0.3s" }} />
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => {
@@ -423,6 +463,16 @@ function Field({ theme, label, value, onChange, type = "text", placeholder, auto
   );
 }
 
+function primaryBtn(bg, fg) {
+  return {
+    width: "100%", height: 52, border: "none", borderRadius: 14,
+    background: bg, color: fg,
+    fontSize: 14, fontWeight: 600, letterSpacing: "0.02em",
+    cursor: "pointer", fontFamily: "inherit",
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+  };
+}
+
 function btnPrimary(theme) {
   return {
     flex: 1, height: 36, border: "none", borderRadius: 8,
@@ -504,4 +554,76 @@ function ProjectPicker({ state, actions, theme, onClose }) {
   );
 }
 
-Object.assign(window, { NowView, ProjectsView, HistoryView, ProjectPicker, useTheme });
+// ═══════════════════════════════════════════════════════════
+// BUDGET EDITOR (weekly target sheet)
+// ═══════════════════════════════════════════════════════════
+function BudgetEditor({ state, actions, theme, onClose }) {
+  const [val, setVal] = React.useState(String(state.weeklyBudget || 40));
+  const presets = [20, 30, 40, 50, 60];
+
+  const save = () => {
+    const v = parseFloat(val) || 0;
+    actions.setWeeklyBudget(v);
+    onClose();
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+      zIndex: 100, animation: "tt-fade-in 200ms ease-out",
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 460,
+        background: theme.bg, color: theme.text,
+        borderRadius: "20px 20px 0 0",
+        padding: "16px 16px 24px",
+        animation: "tt-slide-up 240ms cubic-bezier(0.2, 0.9, 0.3, 1)",
+        boxShadow: "0 -10px 40px rgba(0,0,0,0.3)",
+      }}>
+        <div style={{ width: 36, height: 4, background: theme.line, borderRadius: 2, margin: "0 auto 14px" }} />
+        <h3 style={{ margin: "0 4px 4px", fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>Weekly target</h3>
+        <p style={{ margin: "0 4px 16px", fontSize: 12, color: theme.muted }}>Hours you aim to work each week. Used for the progress ring.</p>
+
+        <Tile theme={theme} pad="20px">
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 6 }}>
+            <input
+              autoFocus
+              type="number"
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+              style={{
+                background: "transparent", border: "none", outline: "none",
+                fontSize: 64, fontWeight: 700, letterSpacing: "-0.04em",
+                fontVariantNumeric: "tabular-nums", color: theme.text,
+                width: 140, textAlign: "right", fontFamily: "inherit",
+              }}
+            />
+            <span style={{ fontSize: 22, color: theme.muted, fontWeight: 500 }}>h / week</span>
+          </div>
+        </Tile>
+
+        <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+          {presets.map((p) => (
+            <button key={p} onClick={() => setVal(String(p))} style={{
+              flex: 1, minWidth: 60, height: 36,
+              border: `1px solid ${theme.line}`,
+              background: String(p) === val ? theme.ink : "transparent",
+              color: String(p) === val ? theme.onInk : theme.text,
+              borderRadius: 8, fontSize: 13, fontWeight: 500,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>{p}h</button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button onClick={onClose} style={btnGhost(theme)}>Cancel</button>
+          <button onClick={save} style={btnPrimary(theme)}>Save target</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { NowView, ProjectsView, HistoryView, ProjectPicker, BudgetEditor, useTheme });

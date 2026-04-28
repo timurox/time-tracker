@@ -43,7 +43,11 @@ function useAuth() {
 function useStore(user) {
   const [projects, setProjects] = React.useState([]);
   const [entries, setEntries] = React.useState([]);
-  const [timer, setTimer] = React.useState(loadRunning() || { projectId: null, startedAt: null, note: "" });
+  const [timer, setTimer] = React.useState(loadRunning() || { projectId: null, startedAt: null, originalStart: null, accumulatedMs: 0, pausedAt: null, note: "" });
+  const [weeklyBudget, setWeeklyBudgetState] = React.useState(() => {
+    const v = parseFloat(localStorage.getItem("tt_weekly_budget"));
+    return isNaN(v) ? 40 : v;
+  });
   const [loaded, setLoaded] = React.useState(false);
   const [error, setError] = React.useState(null);
 
@@ -58,6 +62,7 @@ function useStore(user) {
     if (eErr) { setError(eErr.message); return; }
     setProjects((pData || []).map(p => ({
       id: p.id, name: p.name, client: p.client || "", rate: parseFloat(p.rate) || 0, color: p.color || "#1a1a1a",
+      budgetHours: p.budget_hours != null ? parseFloat(p.budget_hours) : null,
     })));
     setEntries((eData || []).map(e => ({
       id: e.id, projectId: e.project_id,
@@ -99,19 +104,37 @@ function useStore(user) {
 
   const actions = React.useMemo(() => ({
     startTimer: (projectId, note = "") => {
-      setTimer({ projectId: projectId || (projects[0] && projects[0].id), startedAt: Date.now(), note });
+      const now = Date.now();
+      setTimer({ projectId: projectId || (projects[0] && projects[0].id), startedAt: now, originalStart: now, accumulatedMs: 0, pausedAt: null, note });
+    },
+    pauseTimer: () => {
+      setTimer((t) => {
+        if (!t.startedAt || t.pausedAt) return t;
+        const now = Date.now();
+        return { ...t, accumulatedMs: (t.accumulatedMs || 0) + (now - t.startedAt), startedAt: null, pausedAt: now };
+      });
+    },
+    resumeTimer: () => {
+      setTimer((t) => {
+        if (!t.pausedAt) return t;
+        return { ...t, startedAt: Date.now(), pausedAt: null };
+      });
     },
     stopTimer: async () => {
-      if (!timer.startedAt || !user || !timer.projectId) {
-        setTimer((t) => ({ ...t, startedAt: null, note: "" }));
+      const isRunning = !!timer.startedAt;
+      const isPaused = !!timer.pausedAt;
+      if ((!isRunning && !isPaused) || !user || !timer.projectId) {
+        setTimer({ projectId: timer.projectId, startedAt: null, originalStart: null, accumulatedMs: 0, pausedAt: null, note: "" });
         return;
       }
-      const startMs = timer.startedAt;
-      const endMs = Date.now();
+      const now = Date.now();
+      const totalMs = (timer.accumulatedMs || 0) + (isRunning ? (now - timer.startedAt) : 0);
+      const startMs = timer.originalStart || timer.startedAt || (now - totalMs);
+      const endMs = startMs + totalMs; // collapse pauses → contiguous entry
       const projectId = timer.projectId;
       const note = timer.note;
-      // optimistic — reset timer immediately
-      setTimer((t) => ({ ...t, startedAt: null, note: "" }));
+      setTimer({ projectId, startedAt: null, originalStart: null, accumulatedMs: 0, pausedAt: null, note: "" });
+      if (totalMs < 1000) return; // discard < 1s sessions
       const { data, error } = await sb.from("entries").insert({
         user_id: user.id,
         project_id: projectId,
@@ -141,10 +164,12 @@ function useStore(user) {
         client: proj.client || "",
         rate: proj.rate || 0,
         color: proj.color || "#1a1a1a",
+        budget_hours: proj.budgetHours ?? null,
       }).select().single();
       if (error) { setError(error.message); return; }
       setProjects((ps) => [...ps, {
         id: data.id, name: data.name, client: data.client || "", rate: parseFloat(data.rate) || 0, color: data.color,
+        budgetHours: data.budget_hours != null ? parseFloat(data.budget_hours) : null,
       }]);
     },
     updateProject: async (id, patch) => {
@@ -154,6 +179,7 @@ function useStore(user) {
       if ("client" in patch) dbPatch.client = patch.client;
       if ("rate"   in patch) dbPatch.rate   = patch.rate;
       if ("color"  in patch) dbPatch.color  = patch.color;
+      if ("budgetHours" in patch) dbPatch.budget_hours = patch.budgetHours;
       const { error } = await sb.from("projects").update(dbPatch).eq("id", id);
       if (error) { setError(error.message); refresh(); }
     },
@@ -181,9 +207,14 @@ function useStore(user) {
     },
     refresh,
     clearError: () => setError(null),
+    setWeeklyBudget: (h) => {
+      const v = parseFloat(h) || 0;
+      setWeeklyBudgetState(v);
+      try { localStorage.setItem("tt_weekly_budget", String(v)); } catch {}
+    },
   }), [user, projects, timer, refresh]);
 
-  const state = { projects, entries, timer, weekStart: 1, defaultRate: 85, loaded, error };
+  const state = { projects, entries, timer, weekStart: 1, defaultRate: 85, weeklyBudget, loaded, error };
   return [state, actions];
 }
 
