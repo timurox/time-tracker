@@ -48,6 +48,10 @@ function useStore(user) {
     const v = parseFloat(localStorage.getItem("tt_weekly_budget"));
     return isNaN(v) ? 40 : v;
   });
+  const [monthlyBudget, setMonthlyBudgetState] = React.useState(() => {
+    const v = parseFloat(localStorage.getItem("tt_monthly_budget"));
+    return isNaN(v) ? null : v;
+  });
   const [loaded, setLoaded] = React.useState(false);
   const [error, setError] = React.useState(null);
 
@@ -212,9 +216,17 @@ function useStore(user) {
       setWeeklyBudgetState(v);
       try { localStorage.setItem("tt_weekly_budget", String(v)); } catch {}
     },
+    setMonthlyBudget: (h) => {
+      const v = h !== null && h !== "" ? parseFloat(h) || 0 : null;
+      setMonthlyBudgetState(v);
+      try {
+        if (v === null) localStorage.removeItem("tt_monthly_budget");
+        else localStorage.setItem("tt_monthly_budget", String(v));
+      } catch {}
+    },
   }), [user, projects, timer, refresh]);
 
-  const state = { projects, entries, timer, weekStart: 1, defaultRate: 85, weeklyBudget, loaded, error };
+  const state = { projects, entries, timer, weekStart: 1, defaultRate: 85, weeklyBudget, monthlyBudget, loaded, error };
   return [state, actions];
 }
 

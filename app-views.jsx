@@ -85,6 +85,15 @@ function NowView({ state, actions, theme, now, onSwitchProject, onEditWeekBudget
   const weekPct = weekHours / weeklyBudget;
   const weekColor = weekPct >= 1 ? "#d44" : weekPct >= 0.8 ? "#e8a23a" : theme.accent;
 
+  // Month
+  const monthlyBudget = state.monthlyBudget;
+  const monthStart = (() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d.getTime(); })();
+  const monthEntries = state.entries.filter((e) => e.start >= monthStart);
+  const monthMs = monthEntries.reduce((sum, e) => sum + entryDuration(e), 0) + (active && sessionAnchor >= monthStart ? elapsed : 0);
+  const monthHours = monthMs / 3600000;
+  const monthPct = monthlyBudget ? monthHours / monthlyBudget : 0;
+  const monthColor = monthPct >= 1 ? "#d44" : monthPct >= 0.8 ? "#e8a23a" : theme.accent;
+
   // 7 days bars
   const dayBars = Array(7).fill(0);
   for (const e of weekEntries) {
@@ -188,6 +197,33 @@ function NowView({ state, actions, theme, now, onSwitchProject, onEditWeekBudget
           </div>
         </Tile>
       </div>
+
+      {/* Month ring — only shown when a monthly budget is set */}
+      {monthlyBudget != null && (
+        <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={onEditWeekBudget}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Label color="rgba(255,255,255,0.5)">Month</Label>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 2l2 2-6 6H3V8l6-6z"/>
+            </svg>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10 }}>
+            <Ring pct={monthPct} accent={monthColor} track="rgba(255,255,255,0.15)" size={58} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                {monthHours.toFixed(1)}
+              </div>
+              <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {monthlyBudget}h</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.04em" }}>remaining</div>
+              <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em", marginTop: 2, color: monthPct >= 1 ? "#d44" : "inherit" }}>
+                {Math.max(0, monthlyBudget - monthHours).toFixed(1)}h
+              </div>
+            </div>
+          </div>
+        </Tile>
+      )}
 
       {/* Week activity bars */}
       <Tile theme={theme} style={{ minHeight: 130 }}>
@@ -555,17 +591,40 @@ function ProjectPicker({ state, actions, theme, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// BUDGET EDITOR (weekly target sheet)
+// BUDGET EDITOR (weekly + monthly targets sheet)
 // ═══════════════════════════════════════════════════════════
 function BudgetEditor({ state, actions, theme, onClose }) {
-  const [val, setVal] = React.useState(String(state.weeklyBudget || 40));
-  const presets = [20, 30, 40, 50, 60];
+  const [weekVal, setWeekVal] = React.useState(String(state.weeklyBudget || 40));
+  const [monthVal, setMonthVal] = React.useState(state.monthlyBudget != null ? String(state.monthlyBudget) : "");
+  const weekPresets = [20, 30, 40, 50, 60];
+  const monthPresets = [40, 60, 80, 100, 160];
 
   const save = () => {
-    const v = parseFloat(val) || 0;
-    actions.setWeeklyBudget(v);
+    actions.setWeeklyBudget(parseFloat(weekVal) || 0);
+    actions.setMonthlyBudget(monthVal.trim() !== "" ? parseFloat(monthVal) : null);
     onClose();
   };
+
+  const bigInput = (value, onChange, unit) => (
+    <Tile theme={theme} pad="16px 20px">
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 6 }}>
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+          placeholder="—"
+          style={{
+            background: "transparent", border: "none", outline: "none",
+            fontSize: 56, fontWeight: 700, letterSpacing: "-0.04em",
+            fontVariantNumeric: "tabular-nums", color: theme.text,
+            width: 130, textAlign: "right", fontFamily: "inherit",
+          }}
+        />
+        <span style={{ fontSize: 18, color: theme.muted, fontWeight: 500 }}>{unit}</span>
+      </div>
+    </Tile>
+  );
 
   return (
     <div onClick={onClose} style={{
@@ -580,46 +639,49 @@ function BudgetEditor({ state, actions, theme, onClose }) {
         padding: "16px 16px 24px",
         animation: "tt-slide-up 240ms cubic-bezier(0.2, 0.9, 0.3, 1)",
         boxShadow: "0 -10px 40px rgba(0,0,0,0.3)",
+        maxHeight: "90vh", overflowY: "auto",
       }}>
-        <div style={{ width: 36, height: 4, background: theme.line, borderRadius: 2, margin: "0 auto 14px" }} />
-        <h3 style={{ margin: "0 4px 4px", fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>Weekly target</h3>
-        <p style={{ margin: "0 4px 16px", fontSize: 12, color: theme.muted }}>Hours you aim to work each week. Used for the progress ring.</p>
+        <div style={{ width: 36, height: 4, background: theme.line, borderRadius: 2, margin: "0 auto 16px" }} />
 
-        <Tile theme={theme} pad="20px">
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 6 }}>
-            <input
-              autoFocus
-              type="number"
-              value={val}
-              onChange={(e) => setVal(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") save(); }}
-              style={{
-                background: "transparent", border: "none", outline: "none",
-                fontSize: 64, fontWeight: 700, letterSpacing: "-0.04em",
-                fontVariantNumeric: "tabular-nums", color: theme.text,
-                width: 140, textAlign: "right", fontFamily: "inherit",
-              }}
-            />
-            <span style={{ fontSize: 22, color: theme.muted, fontWeight: 500 }}>h / week</span>
-          </div>
-        </Tile>
-
-        <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
-          {presets.map((p) => (
-            <button key={p} onClick={() => setVal(String(p))} style={{
-              flex: 1, minWidth: 60, height: 36,
+        {/* Weekly */}
+        <h3 style={{ margin: "0 4px 2px", fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>Weekly target</h3>
+        <p style={{ margin: "0 4px 10px", fontSize: 12, color: theme.muted }}>Hours you aim to work per week.</p>
+        {bigInput(weekVal, setWeekVal, "h / week")}
+        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          {weekPresets.map((p) => (
+            <button key={p} onClick={() => setWeekVal(String(p))} style={{
+              flex: 1, minWidth: 52, height: 34,
               border: `1px solid ${theme.line}`,
-              background: String(p) === val ? theme.ink : "transparent",
-              color: String(p) === val ? theme.onInk : theme.text,
+              background: String(p) === weekVal ? theme.ink : "transparent",
+              color: String(p) === weekVal ? theme.onInk : theme.text,
               borderRadius: 8, fontSize: 13, fontWeight: 500,
               cursor: "pointer", fontFamily: "inherit",
             }}>{p}h</button>
           ))}
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <div style={{ height: 1, background: theme.line, margin: "20px 0" }} />
+
+        {/* Monthly */}
+        <h3 style={{ margin: "0 4px 2px", fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>Monthly target</h3>
+        <p style={{ margin: "0 4px 10px", fontSize: 12, color: theme.muted }}>For retainers or monthly billing. Leave blank to hide.</p>
+        {bigInput(monthVal, setMonthVal, "h / month")}
+        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          {monthPresets.map((p) => (
+            <button key={p} onClick={() => setMonthVal(String(p) === monthVal ? "" : String(p))} style={{
+              flex: 1, minWidth: 52, height: 34,
+              border: `1px solid ${theme.line}`,
+              background: String(p) === monthVal ? theme.ink : "transparent",
+              color: String(p) === monthVal ? theme.onInk : theme.text,
+              borderRadius: 8, fontSize: 13, fontWeight: 500,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>{p}h</button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
           <button onClick={onClose} style={btnGhost(theme)}>Cancel</button>
-          <button onClick={save} style={btnPrimary(theme)}>Save target</button>
+          <button onClick={save} style={btnPrimary(theme)}>Save targets</button>
         </div>
       </div>
     </div>
