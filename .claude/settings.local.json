@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/timstream/Desktop/TIM/tim_workspace/time_tracker status)",
+      "Bash(git -C /Users/timstream/Desktop/TIM/tim_workspace/time_tracker remote -v)"
+    ]
+  }
+}
