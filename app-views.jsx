@@ -711,7 +711,7 @@ function LayoutEditor({ layout, onToggle, theme, onClose }) {
 
   return (
     <div onClick={onClose} style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)",
       display: "flex", alignItems: "flex-end", justifyContent: "center",
       zIndex: 100, animation: "tt-fade-in 200ms ease-out",
     }}>
