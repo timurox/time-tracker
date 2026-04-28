@@ -1,9 +1,7 @@
 // app-views.jsx — main app UI: Now (timer), Projects, History
-// Reuses the Block Grid aesthetic from the prototype.
 
 const ACCENT = "#E55B13";
 
-// ── Theme helper ──
 function useTheme(dark) {
   return React.useMemo(() => ({
     bg: dark ? "#0e0e10" : "#ece8e0",
@@ -19,7 +17,6 @@ function useTheme(dark) {
   }), [dark]);
 }
 
-// ── Atoms ──
 function Tile({ children, style, theme, bg, fg, pad = "16px 18px", onClick }) {
   return (
     <div onClick={onClick} style={{
@@ -54,20 +51,27 @@ function Ring({ pct, accent, track, size = 56, stroke = 5 }) {
   );
 }
 
+// ─── Block catalogue (shared by NowView + BlockPanel) ───
+const BLOCK_DEFS = [
+  { key: "note",         label: "Note",          desc: "What are you working on?" },
+  { key: "today",        label: "Today",         desc: "Hours and earnings today" },
+  { key: "week",         label: "Week",          desc: "Weekly progress ring" },
+  { key: "month",        label: "Month",         desc: "Monthly retainer progress" },
+  { key: "weekActivity", label: "Week activity", desc: "Daily bar chart" },
+];
+
 // ═══════════════════════════════════════════════════════════
-// NOW VIEW — main timer screen
+// NOW VIEW — draggable block grid
 // ═══════════════════════════════════════════════════════════
-function NowView({ state, actions, theme, now, layout = {}, onSwitchProject, onEditWeekBudget }) {
-  const show = (key) => layout[key] !== false;
+function NowView({ state, actions, theme, now, placedBlocks, onUpdateBlocks, editMode, onSwitchProject, onEditWeekBudget }) {
   const running = !!state.timer.startedAt;
-  const paused = !!state.timer.pausedAt;
-  const active = running || paused;
+  const paused  = !!state.timer.pausedAt;
+  const active  = running || paused;
   const project = state.projects.find((p) => p.id === state.timer.projectId) || state.projects[0];
-  // Live elapsed = accumulated + (running ? now - startedAt : 0)
   const elapsed = (state.timer.accumulatedMs || 0) + (running ? now - state.timer.startedAt : 0);
   const sessionAnchor = state.timer.originalStart || state.timer.startedAt || state.timer.pausedAt;
 
-  // Today's entries
+  // Today
   const todayStart = startOfDay(new Date()).getTime();
   const todayEntries = state.entries.filter((e) => e.start >= todayStart);
   const todayMs = todayEntries.reduce((sum, e) => sum + entryDuration(e), 0) + (active && sessionAnchor >= todayStart ? elapsed : 0);
@@ -95,7 +99,7 @@ function NowView({ state, actions, theme, now, layout = {}, onSwitchProject, onE
   const monthPct = monthlyBudget ? monthHours / monthlyBudget : 0;
   const monthColor = monthPct >= 1 ? "#d44" : monthPct >= 0.8 ? "#e8a23a" : theme.accent;
 
-  // 7 days bars
+  // Week activity bars
   const dayBars = Array(7).fill(0);
   for (const e of weekEntries) {
     const dayIdx = Math.floor((startOfDay(new Date(e.start)).getTime() - weekStart) / 86400000);
@@ -106,12 +110,154 @@ function NowView({ state, actions, theme, now, layout = {}, onSwitchProject, onE
     if (dayIdx >= 0 && dayIdx < 7) dayBars[dayIdx] += elapsed / 3600000;
   }
   const todayDayIdx = Math.floor((todayStart - weekStart) / 86400000);
-
   const earnedNow = active ? Math.round((elapsed / 3600000) * (project?.rate || 0)) : 0;
+
+  // Drag state
+  const [draggedKey, setDraggedKey] = React.useState(null);
+  const [dragOver,   setDragOver]   = React.useState(null);
+
+  const handleDragStart = (e, key) => {
+    setDraggedKey(key);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleDragOver = (e, key) => {
+    e.preventDefault();
+    if (draggedKey && draggedKey !== key) setDragOver(key);
+  };
+  const handleDrop = (e, key) => {
+    e.preventDefault();
+    if (!draggedKey || draggedKey === key) { setDraggedKey(null); setDragOver(null); return; }
+    const next = [...placedBlocks];
+    const fi = next.indexOf(draggedKey), ti = next.indexOf(key);
+    if (fi < 0 || ti < 0) { setDraggedKey(null); setDragOver(null); return; }
+    next.splice(fi, 1);
+    next.splice(ti, 0, draggedKey);
+    onUpdateBlocks(next);
+    setDraggedKey(null);
+    setDragOver(null);
+  };
+
+  // today + week each span 1 column; everything else full-width
+  const getSpan = (key) => (key === "today" || key === "week") ? 1 : 2;
+
+  const pencilIcon = (opacity = "rgba(255,255,255,0.5)") => (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke={opacity} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 2l2 2-6 6H3V8l6-6z"/>
+    </svg>
+  );
+
+  const renderContent = (key) => {
+    switch (key) {
+      case "note":
+        return (
+          <Tile theme={theme} pad="0">
+            <input
+              value={state.timer.note}
+              onChange={(e) => actions.setNote(e.target.value)}
+              placeholder="What are you working on?"
+              style={{
+                width: "100%", background: "transparent", border: "none",
+                outline: "none", fontFamily: "inherit", fontSize: 14,
+                color: theme.text, padding: "14px 18px",
+              }}
+            />
+          </Tile>
+        );
+      case "today":
+        return (
+          <Tile theme={theme}>
+            <Label color={theme.muted}>Today</Label>
+            <div style={{ fontSize: 46, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums", marginTop: 12 }}>
+              {todayHours.toFixed(1)}<span style={{ fontSize: 18, fontWeight: 500, color: theme.muted, marginLeft: 4 }}>h</span>
+            </div>
+            <div style={{ fontSize: 11, color: theme.muted, marginTop: 6 }}>
+              {todayEntries.length + (running ? 1 : 0)} {(todayEntries.length + (running ? 1 : 0)) === 1 ? "session" : "sessions"} · ${todayEarnings.toFixed(0)}
+            </div>
+          </Tile>
+        );
+      case "week":
+        return (
+          <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={editMode ? null : onEditWeekBudget}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Label color="rgba(255,255,255,0.5)">Week</Label>
+              {!editMode && pencilIcon()}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+              <Ring pct={weekPct} accent={weekColor} track="rgba(255,255,255,0.15)" size={58} />
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {weekHours.toFixed(1)}
+                </div>
+                <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {weeklyBudget}h</div>
+              </div>
+            </div>
+          </Tile>
+        );
+      case "month":
+        if (monthlyBudget == null) return (
+          <Tile theme={theme} onClick={onEditWeekBudget} style={{ cursor: "pointer" }}>
+            <Label color={theme.muted}>Month</Label>
+            <div style={{ fontSize: 12, color: theme.muted, marginTop: 8, lineHeight: 1.5 }}>No monthly target set.</div>
+            <div style={{ marginTop: 8, fontSize: 12, color: theme.accent, fontWeight: 600 }}>Set target →</div>
+          </Tile>
+        );
+        return (
+          <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={editMode ? null : onEditWeekBudget}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Label color="rgba(255,255,255,0.5)">Month</Label>
+              {!editMode && pencilIcon()}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10 }}>
+              <Ring pct={monthPct} accent={monthColor} track="rgba(255,255,255,0.15)" size={58} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {monthHours.toFixed(1)}
+                </div>
+                <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {monthlyBudget}h</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.04em" }}>remaining</div>
+                <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em", marginTop: 2, color: monthPct >= 1 ? "#d44" : "inherit" }}>
+                  {Math.max(0, monthlyBudget - monthHours).toFixed(1)}h
+                </div>
+              </div>
+            </div>
+          </Tile>
+        );
+      case "weekActivity":
+        return (
+          <Tile theme={theme} style={{ minHeight: 130 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <Label color={theme.muted}>Week activity</Label>
+              <span style={{ fontSize: 11, color: theme.muted }}>Mon — Sun</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, alignItems: "end", marginTop: 14, height: 70 }}>
+              {dayBars.map((h, i) => {
+                const isToday = i === todayDayIdx;
+                const heightPct = Math.max(2, (h / 8) * 100);
+                return (
+                  <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, height: "100%", justifyContent: "flex-end" }}>
+                    <div style={{
+                      width: "100%", height: `${heightPct}%`,
+                      background: h === 0 ? theme.line : (isToday ? theme.accent : theme.ink),
+                      borderRadius: 3, minHeight: 4,
+                    }} />
+                    <span style={{ fontSize: 10, color: theme.muted, letterSpacing: "0.06em", fontWeight: 500 }}>
+                      {["M","T","W","T","F","S","S"][i]}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </Tile>
+        );
+      default: return null;
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* BIG TIMER TILE */}
+      {/* BIG TIMER TILE — always visible, not removable */}
       <Tile theme={theme} bg={running ? theme.accent : (paused ? theme.stone : theme.ink)} fg={paused ? theme.text : "#fff"} pad="20px 22px">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -136,7 +282,6 @@ function NowView({ state, actions, theme, now, layout = {}, onSwitchProject, onE
             <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 3.5L4.5 6 7 3.5"/></svg>
           </button>
         </div>
-
         <div style={{
           fontSize: 76, fontWeight: 700, lineHeight: 0.95,
           letterSpacing: "-0.045em", fontVariantNumeric: "tabular-nums",
@@ -149,116 +294,49 @@ function NowView({ state, actions, theme, now, layout = {}, onSwitchProject, onE
         </div>
       </Tile>
 
-      {/* Note input */}
-      {show("note") && (
-        <Tile theme={theme} pad="0">
-          <input
-            value={state.timer.note}
-            onChange={(e) => actions.setNote(e.target.value)}
-            placeholder="What are you working on?"
-            style={{
-              width: "100%",
-              background: "transparent",
-              border: "none",
-              outline: "none",
-              fontFamily: "inherit",
-              fontSize: 14,
-              color: theme.text,
-              padding: "14px 18px",
-            }}
-          />
-        </Tile>
-      )}
-
-      {/* Today + Week row */}
-      {(show("today") || show("week")) && (
-        <div style={{ display: "grid", gridTemplateColumns: show("today") && show("week") ? "1.35fr 1fr" : "1fr", gap: 12 }}>
-          {show("today") && (
-            <Tile theme={theme}>
-              <Label color={theme.muted}>Today</Label>
-              <div style={{ fontSize: 46, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums", marginTop: 12 }}>
-                {todayHours.toFixed(1)}<span style={{ fontSize: 18, fontWeight: 500, color: theme.muted, marginLeft: 4 }}>h</span>
-              </div>
-              <div style={{ fontSize: 11, color: theme.muted, marginTop: 6 }}>
-                {todayEntries.length + (running ? 1 : 0)} {(todayEntries.length + (running ? 1 : 0)) === 1 ? "session" : "sessions"} · ${todayEarnings.toFixed(0)}
-              </div>
-            </Tile>
-          )}
-          {show("week") && (
-            <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={onEditWeekBudget}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <Label color="rgba(255,255,255,0.5)">Week</Label>
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 2l2 2-6 6H3V8l6-6z"/>
-                </svg>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-                <Ring pct={weekPct} accent={weekColor} track="rgba(255,255,255,0.15)" size={58} />
-                <div>
-                  <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                    {weekHours.toFixed(1)}
-                  </div>
-                  <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {weeklyBudget}h</div>
-                </div>
-              </div>
-            </Tile>
-          )}
-        </div>
-      )}
-
-      {/* Month ring — only shown when a monthly budget is set */}
-      {show("month") && monthlyBudget != null && (
-        <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={onEditWeekBudget}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Label color="rgba(255,255,255,0.5)">Month</Label>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 2l2 2-6 6H3V8l6-6z"/>
-            </svg>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10 }}>
-            <Ring pct={monthPct} accent={monthColor} track="rgba(255,255,255,0.15)" size={58} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                {monthHours.toFixed(1)}
-              </div>
-              <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {monthlyBudget}h</div>
+      {/* Draggable blocks grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {placedBlocks.map((key) => {
+          const content = renderContent(key);
+          if (!content) return null;
+          return (
+            <div
+              key={key}
+              draggable
+              onDragStart={(e) => handleDragStart(e, key)}
+              onDragOver={(e) => handleDragOver(e, key)}
+              onDrop={(e) => handleDrop(e, key)}
+              onDragEnd={() => { setDraggedKey(null); setDragOver(null); }}
+              style={{
+                gridColumn: `span ${getSpan(key)}`,
+                position: "relative",
+                opacity: draggedKey === key ? 0.4 : 1,
+                transition: "opacity 0.15s",
+                borderRadius: 14,
+                outline: dragOver === key ? `2px dashed ${theme.accent}` : "2px solid transparent",
+                outlineOffset: 2,
+                cursor: editMode ? "grab" : "default",
+              }}
+            >
+              {content}
+              {editMode && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onUpdateBlocks(placedBlocks.filter((k) => k !== key)); }}
+                  style={{
+                    position: "absolute", top: -8, right: -8, zIndex: 10,
+                    width: 22, height: 22, borderRadius: "50%",
+                    background: "#222", border: "2px solid #fff",
+                    color: "#fff", cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 14, lineHeight: 1, fontWeight: 700, padding: 0,
+                    fontFamily: "inherit",
+                  }}
+                >×</button>
+              )}
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.04em" }}>remaining</div>
-              <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em", marginTop: 2, color: monthPct >= 1 ? "#d44" : "inherit" }}>
-                {Math.max(0, monthlyBudget - monthHours).toFixed(1)}h
-              </div>
-            </div>
-          </div>
-        </Tile>
-      )}
-
-      {/* Week activity bars */}
-      {show("weekActivity") && <Tile theme={theme} style={{ minHeight: 130 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <Label color={theme.muted}>Week activity</Label>
-          <span style={{ fontSize: 11, color: theme.muted }}>Mon — Sun</span>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, alignItems: "end", marginTop: 14, height: 70 }}>
-          {dayBars.map((h, i) => {
-            const isToday = i === todayDayIdx;
-            const heightPct = Math.max(2, (h / 8) * 100);
-            return (
-              <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, height: "100%", justifyContent: "flex-end" }}>
-                <div style={{
-                  width: "100%",
-                  height: `${heightPct}%`,
-                  background: h === 0 ? theme.line : (isToday ? theme.accent : theme.ink),
-                  borderRadius: 3, minHeight: 4,
-                }} />
-                <span style={{ fontSize: 10, color: theme.muted, letterSpacing: "0.06em", fontWeight: 500 }}>
-                  {["M","T","W","T","F","S","S"][i]}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </Tile>}
+          );
+        })}
+      </div>
 
       {/* START / PAUSE / RESUME / STOP */}
       {!active && (
@@ -301,7 +379,6 @@ function ProjectsView({ state, actions, theme }) {
   const [adding, setAdding] = React.useState(false);
   const [draft, setDraft] = React.useState({ name: "", client: "", rate: state.defaultRate, budgetHours: "" });
 
-  // total time per project
   const totals = {};
   for (const e of state.entries) {
     totals[e.projectId] = (totals[e.projectId] || 0) + entryDuration(e);
@@ -400,7 +477,6 @@ function ProjectsView({ state, actions, theme }) {
 // HISTORY VIEW
 // ═══════════════════════════════════════════════════════════
 function HistoryView({ state, actions, theme }) {
-  // group entries by day
   const groups = {};
   for (const e of state.entries) {
     const dayKey = startOfDay(new Date(e.start)).getTime();
@@ -516,7 +592,6 @@ function primaryBtn(bg, fg) {
     display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
   };
 }
-
 function btnPrimary(theme) {
   return {
     flex: 1, height: 36, border: "none", borderRadius: 8,
@@ -602,9 +677,9 @@ function ProjectPicker({ state, actions, theme, onClose }) {
 // BUDGET EDITOR (weekly + monthly targets sheet)
 // ═══════════════════════════════════════════════════════════
 function BudgetEditor({ state, actions, theme, onClose }) {
-  const [weekVal, setWeekVal] = React.useState(String(state.weeklyBudget || 40));
+  const [weekVal,  setWeekVal]  = React.useState(String(state.weeklyBudget || 40));
   const [monthVal, setMonthVal] = React.useState(state.monthlyBudget != null ? String(state.monthlyBudget) : "");
-  const weekPresets = [20, 30, 40, 50, 60];
+  const weekPresets  = [20, 30, 40, 50, 60];
   const monthPresets = [40, 60, 80, 100, 160];
 
   const save = () => {
@@ -651,7 +726,6 @@ function BudgetEditor({ state, actions, theme, onClose }) {
       }}>
         <div style={{ width: 36, height: 4, background: theme.line, borderRadius: 2, margin: "0 auto 16px" }} />
 
-        {/* Weekly */}
         <h3 style={{ margin: "0 4px 2px", fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>Weekly target</h3>
         <p style={{ margin: "0 4px 10px", fontSize: 12, color: theme.muted }}>Hours you aim to work per week.</p>
         {bigInput(weekVal, setWeekVal, "h / week")}
@@ -670,7 +744,6 @@ function BudgetEditor({ state, actions, theme, onClose }) {
 
         <div style={{ height: 1, background: theme.line, margin: "20px 0" }} />
 
-        {/* Monthly */}
         <h3 style={{ margin: "0 4px 2px", fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>Monthly target</h3>
         <p style={{ margin: "0 4px 10px", fontSize: 12, color: theme.muted }}>For retainers or monthly billing. Leave blank to hide.</p>
         {bigInput(monthVal, setMonthVal, "h / month")}
@@ -697,66 +770,113 @@ function BudgetEditor({ state, actions, theme, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// LAYOUT EDITOR — toggle blocks on/off
+// BLOCK PANEL — slides in from the left
 // ═══════════════════════════════════════════════════════════
-function LayoutEditor({ layout, onToggle, theme, onClose }) {
-  const blocks = [
-    { key: "note",        label: "Note input",      desc: "What are you working on?" },
-    { key: "today",       label: "Today",           desc: "Hours and earnings today" },
-    { key: "week",        label: "Week",            desc: "Weekly progress ring" },
-    { key: "month",       label: "Month",           desc: "Monthly retainer progress" },
-    { key: "weekActivity",label: "Week activity",   desc: "Daily bar chart" },
-  ];
-  const isOn = (key) => layout[key] !== false;
+function BlockPanel({ placedBlocks, onUpdateBlocks, theme, onClose }) {
+  const available = BLOCK_DEFS.filter((d) => !placedBlocks.includes(d.key));
+  const placed    = BLOCK_DEFS.filter((d) =>  placedBlocks.includes(d.key));
+
+  const addBlock    = (key) => { if (!placedBlocks.includes(key)) onUpdateBlocks([...placedBlocks, key]); };
+  const removeBlock = (key) => onUpdateBlocks(placedBlocks.filter((k) => k !== key));
 
   return (
-    <div onClick={onClose} style={{
-      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)",
-      display: "flex", alignItems: "flex-end", justifyContent: "center",
-      zIndex: 100, animation: "tt-fade-in 200ms ease-out",
-    }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: "100%", maxWidth: 460,
-        background: theme.bg, color: theme.text,
-        borderRadius: "20px 20px 0 0",
-        padding: "16px 16px 32px",
-        animation: "tt-slide-up 240ms cubic-bezier(0.2, 0.9, 0.3, 1)",
-        boxShadow: "0 -10px 40px rgba(0,0,0,0.3)",
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 200 }}>
+      {/* dim overlay */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.35)",
+          animation: "tt-fade-in 200ms ease-out",
+        }}
+      />
+
+      {/* panel */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, bottom: 0,
+        width: 260, background: theme.paper, color: theme.text,
+        boxShadow: "4px 0 24px rgba(0,0,0,0.2)",
+        animation: "tt-slide-in-left 240ms cubic-bezier(0.2, 0.9, 0.3, 1)",
+        display: "flex", flexDirection: "column", overflowY: "auto",
       }}>
-        <div style={{ width: 36, height: 4, background: theme.line, borderRadius: 2, margin: "0 auto 16px" }} />
-        <h3 style={{ margin: "0 4px 4px", fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>Customize layout</h3>
-        <p style={{ margin: "0 4px 16px", fontSize: 12, color: theme.muted }}>Show or hide blocks on the Now screen.</p>
-        <Tile theme={theme} pad="0">
-          {blocks.map((b, i) => (
-            <div key={b.key} onClick={() => onToggle(b.key)} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "13px 16px",
-              borderTop: i === 0 ? "none" : `1px solid ${theme.line}`,
-              cursor: "pointer",
-            }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 500 }}>{b.label}</div>
-                <div style={{ fontSize: 11, color: theme.muted, marginTop: 2 }}>{b.desc}</div>
+        {/* header */}
+        <div style={{ padding: "20px 16px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.01em" }}>Blocks</div>
+          <button onClick={onClose} style={{
+            width: 28, height: 28, borderRadius: "50%",
+            background: theme.stone, border: "none",
+            color: theme.text, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, fontFamily: "inherit",
+          }}>×</button>
+        </div>
+
+        <div style={{ padding: "0 12px", flex: 1 }}>
+          {/* Available blocks */}
+          {available.length > 0 && (
+            <>
+              <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600, color: theme.muted, padding: "4px 4px 8px" }}>
+                Add to canvas
               </div>
-              <div style={{
-                width: 36, height: 20, borderRadius: 999,
-                background: isOn(b.key) ? theme.accent : theme.line,
-                position: "relative", transition: "background 0.15s", flexShrink: 0,
-              }}>
-                <div style={{
-                  position: "absolute", top: 3, left: isOn(b.key) ? 19 : 3,
-                  width: 14, height: 14, borderRadius: "50%", background: "#fff",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                  transition: "left 0.15s",
-                }} />
-              </div>
+              {available.map((d) => (
+                <div key={d.key} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "10px 12px", borderRadius: 10,
+                  background: theme.stone, marginBottom: 6,
+                }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{d.label}</div>
+                    <div style={{ fontSize: 11, color: theme.muted, marginTop: 2 }}>{d.desc}</div>
+                  </div>
+                  <button onClick={() => addBlock(d.key)} style={{
+                    width: 26, height: 26, borderRadius: "50%", flexShrink: 0, marginLeft: 8,
+                    background: theme.accent, border: "none",
+                    color: "#fff", cursor: "pointer", fontSize: 18,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "inherit",
+                  }}>+</button>
+                </div>
+              ))}
+            </>
+          )}
+          {available.length === 0 && (
+            <div style={{ fontSize: 12, color: theme.muted, padding: "4px 4px 12px", lineHeight: 1.5 }}>
+              All blocks are on the canvas.
             </div>
-          ))}
-        </Tile>
-        <button onClick={onClose} style={{ ...btnPrimary(theme), marginTop: 16, width: "100%", height: 46 }}>Done</button>
+          )}
+
+          {/* Placed blocks */}
+          {placed.length > 0 && (
+            <div style={{ borderTop: `1px solid ${theme.line}`, marginTop: available.length ? 12 : 0, paddingTop: 12 }}>
+              <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600, color: theme.muted, padding: "0 4px 8px" }}>
+                On canvas
+              </div>
+              {placed.map((d) => (
+                <div key={d.key} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "10px 12px", borderRadius: 10,
+                  border: `1px solid ${theme.line}`, marginBottom: 6,
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: theme.muted }}>{d.label}</div>
+                  <button onClick={() => removeBlock(d.key)} style={{
+                    width: 26, height: 26, borderRadius: "50%", flexShrink: 0, marginLeft: 8,
+                    background: theme.line, border: "none",
+                    color: theme.muted, cursor: "pointer", fontSize: 14,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "inherit",
+                  }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "12px 16px 28px", flexShrink: 0 }}>
+          <button onClick={onClose} style={{ ...btnPrimary(theme), width: "100%", height: 44 }}>Done</button>
+        </div>
       </div>
     </div>
   );
 }
 
-Object.assign(window, { NowView, ProjectsView, HistoryView, ProjectPicker, BudgetEditor, LayoutEditor, useTheme });
+Object.assign(window, { NowView, ProjectsView, HistoryView, ProjectPicker, BudgetEditor, BlockPanel, useTheme });
