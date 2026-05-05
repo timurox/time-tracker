@@ -90,14 +90,15 @@ function NowView({ state, actions, theme, now, placedBlocks, onUpdateBlocks, edi
   const weekPct = weekHours / weeklyBudget;
   const weekColor = weekPct >= 1 ? "#d44" : weekPct >= 0.8 ? "#e8a23a" : theme.accent;
 
-  // Month
-  const monthlyBudget = state.monthlyBudget;
+  // Month — project-specific: uses the active project's budgetHours
   const monthStart = (() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d.getTime(); })();
-  const monthEntries = state.entries.filter((e) => e.start >= monthStart);
-  const monthMs = monthEntries.reduce((sum, e) => sum + entryDuration(e), 0) + (active && sessionAnchor >= monthStart ? elapsed : 0);
-  const monthHours = monthMs / 3600000;
-  const monthPct = monthlyBudget ? monthHours / monthlyBudget : 0;
-  const monthColor = monthPct >= 1 ? "#d44" : monthPct >= 0.8 ? "#e8a23a" : theme.accent;
+  const projectBudget = project?.budgetHours ?? null;
+  const projectMonthEntries = state.entries.filter((e) => e.start >= monthStart && e.projectId === project?.id);
+  const projectMonthMs = projectMonthEntries.reduce((sum, e) => sum + entryDuration(e), 0)
+    + (active && sessionAnchor >= monthStart ? elapsed : 0);
+  const projectMonthHours = projectMonthMs / 3600000;
+  const projectMonthPct = projectBudget ? projectMonthHours / projectBudget : 0;
+  const projectMonthColor = projectMonthPct >= 1 ? "#d44" : projectMonthPct >= 0.8 ? "#e8a23a" : theme.accent;
 
   // Week activity bars
   const dayBars = Array(7).fill(0);
@@ -194,31 +195,34 @@ function NowView({ state, actions, theme, now, placedBlocks, onUpdateBlocks, edi
           </Tile>
         );
       case "month":
-        if (monthlyBudget == null) return (
-          <Tile theme={theme} onClick={onEditWeekBudget} style={{ cursor: "pointer" }}>
+        if (projectBudget == null) return (
+          <Tile theme={theme} style={{ cursor: "default" }}>
             <Label color={theme.muted}>Month</Label>
-            <div style={{ fontSize: 12, color: theme.muted, marginTop: 8, lineHeight: 1.5 }}>No monthly target set.</div>
-            <div style={{ marginTop: 8, fontSize: 12, color: theme.accent, fontWeight: 600 }}>Set target →</div>
+            <div style={{ fontSize: 12, color: theme.muted, marginTop: 8, lineHeight: 1.5 }}>
+              No budget set for <strong style={{ color: theme.text }}>{project?.name || "this project"}</strong>.
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: theme.accent, fontWeight: 600 }}>
+              Add one in Projects →
+            </div>
           </Tile>
         );
         return (
-          <Tile theme={theme} bg={theme.ink} fg={theme.onInk} onClick={editMode ? null : onEditWeekBudget}>
+          <Tile theme={theme} bg={theme.ink} fg={theme.onInk}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Label color="rgba(255,255,255,0.5)">Month</Label>
-              {!editMode && pencilIcon()}
+              <Label color="rgba(255,255,255,0.5)">Month · {project?.name}</Label>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10 }}>
-              <Ring pct={monthPct} accent={monthColor} track="rgba(255,255,255,0.15)" size={58} />
+              <Ring pct={projectMonthPct} accent={projectMonthColor} track="rgba(255,255,255,0.15)" size={58} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                  {monthHours.toFixed(1)}
+                  {projectMonthHours.toFixed(1)}
                 </div>
-                <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {monthlyBudget}h</div>
+                <div style={{ fontSize: 10.5, opacity: 0.6, letterSpacing: "0.04em", marginTop: 2 }}>of {projectBudget}h</div>
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: 11, opacity: 0.5, letterSpacing: "0.04em" }}>remaining</div>
-                <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em", marginTop: 2, color: monthPct >= 1 ? "#d44" : "inherit" }}>
-                  {Math.max(0, monthlyBudget - monthHours).toFixed(1)}h
+                <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em", marginTop: 2, color: projectMonthPct >= 1 ? "#d44" : "inherit" }}>
+                  {Math.max(0, projectBudget - projectMonthHours).toFixed(1)}h
                 </div>
               </div>
             </div>
