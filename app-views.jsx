@@ -378,6 +378,23 @@ function NowView({ state, actions, theme, now, placedBlocks, onUpdateBlocks, edi
 function ProjectsView({ state, actions, theme }) {
   const [adding, setAdding] = React.useState(false);
   const [draft, setDraft] = React.useState({ name: "", client: "", rate: state.defaultRate, budgetHours: "" });
+  const [editingId, setEditingId] = React.useState(null);
+  const [editDraft, setEditDraft] = React.useState({});
+
+  const startEdit = (p) => {
+    setEditingId(p.id);
+    setEditDraft({ name: p.name, client: p.client || "", rate: p.rate || 0, budgetHours: p.budgetHours != null ? String(p.budgetHours) : "" });
+  };
+  const saveEdit = (id) => {
+    if (!editDraft.name.trim()) return;
+    actions.updateProject(id, {
+      name: editDraft.name.trim(),
+      client: editDraft.client,
+      rate: parseFloat(editDraft.rate) || 0,
+      budgetHours: editDraft.budgetHours !== "" ? parseFloat(editDraft.budgetHours) : null,
+    });
+    setEditingId(null);
+  };
 
   const totals = {};
   for (const e of state.entries) {
@@ -418,6 +435,23 @@ function ProjectsView({ state, actions, theme }) {
       {state.projects.map((p) => {
         const total = totals[p.id] || 0;
         const isActive = state.timer.projectId === p.id;
+        const isEditing = editingId === p.id;
+
+        if (isEditing) return (
+          <Tile key={p.id} theme={theme}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <Field theme={theme} label="Project name" value={editDraft.name} onChange={(v) => setEditDraft({ ...editDraft, name: v })} autoFocus />
+              <Field theme={theme} label="Client" value={editDraft.client} onChange={(v) => setEditDraft({ ...editDraft, client: v })} />
+              <Field theme={theme} label="Rate ($/hr)" type="number" value={editDraft.rate} onChange={(v) => setEditDraft({ ...editDraft, rate: v })} />
+              <Field theme={theme} label="Hour budget (optional)" type="number" value={editDraft.budgetHours} onChange={(v) => setEditDraft({ ...editDraft, budgetHours: v })} placeholder="e.g. 20" />
+              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                <button onClick={() => setEditingId(null)} style={btnGhost(theme)}>Cancel</button>
+                <button onClick={() => saveEdit(p.id)} style={btnPrimary(theme)}>Save</button>
+              </div>
+            </div>
+          </Tile>
+        );
+
         return (
           <Tile key={p.id} theme={theme}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -458,6 +492,9 @@ function ProjectsView({ state, actions, theme }) {
                   setTimeout(() => actions.startTimer(p.id), 50);
                 }} style={btnSmall(theme, true)}>
                   Switch
+                </button>
+                <button onClick={() => startEdit(p)} style={btnSmall(theme, false)} title="Edit">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 1.5l2 2-6 6H2.5v-2l6-6z"/></svg>
                 </button>
                 <button onClick={() => {
                   if (confirm(`Delete "${p.name}" and all its entries?`)) actions.deleteProject(p.id);

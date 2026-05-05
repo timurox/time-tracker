@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(git -C /Users/timstream/Desktop/TIM/tim_workspace/time_tracker status)",
-      "Bash(git -C /Users/timstream/Desktop/TIM/tim_workspace/time_tracker remote -v)"
+      "Bash(git -C /Users/timstream/Desktop/TIM/tim_workspace/time_tracker remote -v)",
+      "mcp__Claude_in_Chrome__computer"
     ]
   }
 }
