@@ -71,14 +71,13 @@ function NowView({ state, actions, theme, now, placedBlocks, onUpdateBlocks, edi
   const elapsed = (state.timer.accumulatedMs || 0) + (running ? now - state.timer.startedAt : 0);
   const sessionAnchor = state.timer.originalStart || state.timer.startedAt || state.timer.pausedAt;
 
-  // Today
+  // Today — scoped to the active project
   const todayStart = startOfDay(new Date()).getTime();
-  const todayEntries = state.entries.filter((e) => e.start >= todayStart);
+  const todayEntries = state.entries.filter((e) => e.start >= todayStart && e.projectId === project?.id);
   const todayMs = todayEntries.reduce((sum, e) => sum + entryDuration(e), 0) + (active && sessionAnchor >= todayStart ? elapsed : 0);
   const todayHours = todayMs / 3600000;
   const todayEarnings = todayEntries.reduce((sum, e) => {
-    const p = state.projects.find((pp) => pp.id === e.projectId);
-    return sum + (entryDuration(e) / 3600000) * (p?.rate || 0);
+    return sum + (entryDuration(e) / 3600000) * (project?.rate || 0);
   }, 0) + (active ? (elapsed / 3600000) * (project?.rate || 0) : 0);
 
   // Week
@@ -167,7 +166,7 @@ function NowView({ state, actions, theme, now, placedBlocks, onUpdateBlocks, edi
       case "today":
         return (
           <Tile theme={theme}>
-            <Label color={theme.muted}>Today</Label>
+            <Label color={theme.muted}>Today · {project?.name || "—"}</Label>
             <div style={{ fontSize: 46, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums", marginTop: 12 }}>
               {todayHours.toFixed(1)}<span style={{ fontSize: 18, fontWeight: 500, color: theme.muted, marginLeft: 4 }}>h</span>
             </div>
@@ -518,6 +517,26 @@ function ProjectsView({ state, actions, theme }) {
 // HISTORY VIEW
 // ═══════════════════════════════════════════════════════════
 function HistoryView({ state, actions, theme }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [addingManual, setAddingManual] = React.useState(false);
+  const [manual, setManual] = React.useState({
+    projectId: state.projects[0]?.id || "",
+    date: todayStr,
+    start: "",
+    end: "",
+    note: "",
+  });
+
+  const submitManual = () => {
+    if (!manual.projectId || !manual.date || !manual.start || !manual.end) return;
+    const startMs = new Date(`${manual.date}T${manual.start}`).getTime();
+    const endMs   = new Date(`${manual.date}T${manual.end}`).getTime();
+    if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) return;
+    actions.addManualEntry({ projectId: manual.projectId, start: startMs, end: endMs, note: manual.note });
+    setAddingManual(false);
+    setManual({ projectId: manual.projectId, date: todayStr, start: "", end: "", note: "" });
+  };
+
   const groups = {};
   for (const e of state.entries) {
     const dayKey = startOfDay(new Date(e.start)).getTime();
@@ -525,14 +544,72 @@ function HistoryView({ state, actions, theme }) {
   }
   const dayKeys = Object.keys(groups).map(Number).sort((a, b) => b - a);
 
+  const inputStyle = (theme) => ({
+    background: theme.stone, border: "none", outline: "none",
+    padding: "9px 12px", borderRadius: 8,
+    fontSize: 14, color: theme.text, fontFamily: "inherit", width: "100%",
+  });
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ padding: "0 4px" }}>
-        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>History</h2>
-        <div style={{ fontSize: 12, color: theme.muted, marginTop: 2 }}>
-          {state.entries.length} {state.entries.length === 1 ? "entry" : "entries"} logged
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "0 4px" }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>History</h2>
+          <div style={{ fontSize: 12, color: theme.muted, marginTop: 2 }}>
+            {state.entries.length} {state.entries.length === 1 ? "entry" : "entries"} logged
+          </div>
         </div>
+        <button onClick={() => setAddingManual((v) => !v)} style={{
+          border: `1px solid ${theme.line}`, background: addingManual ? theme.ink : "transparent",
+          color: addingManual ? theme.onInk : theme.text,
+          padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 500,
+          cursor: "pointer", fontFamily: "inherit",
+        }}>+ Log time</button>
       </div>
+
+      {addingManual && (
+        <Tile theme={theme}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Log time manually</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* Project */}
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, color: theme.muted }}>Project</span>
+              <select
+                value={manual.projectId}
+                onChange={(e) => setManual({ ...manual, projectId: e.target.value })}
+                style={{ ...inputStyle(theme), appearance: "none" }}
+              >
+                {state.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            {/* Date */}
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, color: theme.muted }}>Date</span>
+              <input type="date" value={manual.date} onChange={(e) => setManual({ ...manual, date: e.target.value })} style={inputStyle(theme)} />
+            </label>
+            {/* Start / End */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, color: theme.muted }}>From</span>
+                <input type="time" value={manual.start} onChange={(e) => setManual({ ...manual, start: e.target.value })} style={inputStyle(theme)} />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, color: theme.muted }}>To</span>
+                <input type="time" value={manual.end} onChange={(e) => setManual({ ...manual, end: e.target.value })} style={inputStyle(theme)} />
+              </label>
+            </div>
+            {/* Note */}
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, color: theme.muted }}>Note (optional)</span>
+              <input type="text" value={manual.note} placeholder="What did you work on?" onChange={(e) => setManual({ ...manual, note: e.target.value })} style={inputStyle(theme)} />
+            </label>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button onClick={() => setAddingManual(false)} style={btnGhost(theme)}>Cancel</button>
+              <button onClick={submitManual} style={btnPrimary(theme)}>Save entry</button>
+            </div>
+          </div>
+        </Tile>
+      )}
 
       {dayKeys.length === 0 && (
         <Tile theme={theme} pad="40px 20px">
