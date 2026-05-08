@@ -537,6 +537,28 @@ function HistoryView({ state, actions, theme }) {
     setManual({ projectId: manual.projectId, date: todayStr, start: "", end: "", note: "" });
   };
 
+  const [editingEntryId, setEditingEntryId] = React.useState(null);
+  const [editEntry, setEditEntry] = React.useState({});
+
+  const startEditEntry = (e) => {
+    const d = new Date(e.start);
+    const pad = (n) => n < 10 ? "0" + n : "" + n;
+    setEditingEntryId(e.id);
+    setEditEntry({
+      date:      `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,
+      startTime: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      endTime:   (() => { const ed = new Date(e.end); return `${pad(ed.getHours())}:${pad(ed.getMinutes())}`; })(),
+      note:      e.note || "",
+    });
+  };
+  const saveEditEntry = (id) => {
+    const startMs = new Date(`${editEntry.date}T${editEntry.startTime}`).getTime();
+    const endMs   = new Date(`${editEntry.date}T${editEntry.endTime}`).getTime();
+    if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) return;
+    actions.updateEntry(id, { start: startMs, end: endMs, note: editEntry.note });
+    setEditingEntryId(null);
+  };
+
   const groups = {};
   for (const e of state.entries) {
     const dayKey = startOfDay(new Date(e.start)).getTime();
@@ -544,10 +566,10 @@ function HistoryView({ state, actions, theme }) {
   }
   const dayKeys = Object.keys(groups).map(Number).sort((a, b) => b - a);
 
-  const inputStyle = (theme) => ({
-    background: theme.stone, border: "none", outline: "none",
+  const inputStyle = (t) => ({
+    background: t.stone, border: "none", outline: "none",
     padding: "9px 12px", borderRadius: 8,
-    fontSize: 14, color: theme.text, fontFamily: "inherit", width: "100%",
+    fontSize: 14, color: t.text, fontFamily: "inherit", width: "100%",
   });
 
   return (
@@ -637,11 +659,43 @@ function HistoryView({ state, actions, theme }) {
             <Tile theme={theme} pad="0">
               {entries.map((e, i) => {
                 const p = state.projects.find((pp) => pp.id === e.projectId);
+                const isEditingThis = editingEntryId === e.id;
+                const borderTop = i === 0 ? "none" : `1px solid ${theme.line}`;
+
+                if (isEditingThis) return (
+                  <div key={e.id} style={{ padding: "14px 16px", borderTop }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: p?.color || theme.muted, flex: "0 0 auto" }} />
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{p?.name || "Unknown project"}</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600, color: theme.muted }}>Date</span>
+                          <input type="date" value={editEntry.date} onChange={(ev) => setEditEntry({ ...editEntry, date: ev.target.value })} style={inputStyle(theme)} />
+                        </label>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600, color: theme.muted }}>From</span>
+                          <input type="time" value={editEntry.startTime} onChange={(ev) => setEditEntry({ ...editEntry, startTime: ev.target.value })} style={inputStyle(theme)} />
+                        </label>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600, color: theme.muted }}>To</span>
+                          <input type="time" value={editEntry.endTime} onChange={(ev) => setEditEntry({ ...editEntry, endTime: ev.target.value })} style={inputStyle(theme)} />
+                        </label>
+                      </div>
+                      <input type="text" value={editEntry.note} placeholder="Note (optional)" onChange={(ev) => setEditEntry({ ...editEntry, note: ev.target.value })} style={inputStyle(theme)} />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => setEditingEntryId(null)} style={btnGhost(theme)}>Cancel</button>
+                        <button onClick={() => saveEditEntry(e.id)} style={btnPrimary(theme)}>Save</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+
                 return (
                   <div key={e.id} style={{
                     display: "flex", alignItems: "center", gap: 12,
-                    padding: "12px 16px",
-                    borderTop: i === 0 ? "none" : `1px solid ${theme.line}`,
+                    padding: "12px 16px", borderTop,
                   }}>
                     <span style={{ width: 8, height: 8, borderRadius: 2, background: p?.color || theme.muted, flex: "0 0 auto" }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -660,6 +714,13 @@ function HistoryView({ state, actions, theme }) {
                         ${((entryDuration(e) / 3600000) * (p?.rate || 0)).toFixed(0)}
                       </div>
                     </div>
+                    <button onClick={() => startEditEntry(e)} style={{
+                      width: 26, height: 26, border: "none", background: "transparent",
+                      color: theme.muted, cursor: "pointer", borderRadius: 6,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }} title="Edit">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 1.5l2 2-6 6H2.5v-2l6-6z"/></svg>
+                    </button>
                     <button onClick={() => {
                       if (confirm("Delete this entry?")) actions.deleteEntry(e.id);
                     }} style={{

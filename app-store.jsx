@@ -161,6 +161,15 @@ function useStore(user) {
       const { error } = await sb.from("entries").delete().eq("id", id);
       if (error) { setError(error.message); refresh(); }
     },
+    updateEntry: async (id, { start, end, note }) => {
+      setEntries((es) => es.map((e) => e.id === id ? { ...e, start, end, note: note ?? e.note } : e)); // optimistic
+      const { error } = await sb.from("entries").update({
+        start_at: new Date(start).toISOString(),
+        end_at:   new Date(end).toISOString(),
+        note:     note ?? "",
+      }).eq("id", id);
+      if (error) { setError(error.message); refresh(); }
+    },
     addProject: async (proj) => {
       const { data, error } = await sb.from("projects").insert({
         user_id: user.id,
