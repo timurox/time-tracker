@@ -67,6 +67,7 @@ function useStore(user) {
     setProjects((pData || []).map(p => ({
       id: p.id, name: p.name, client: p.client || "", rate: parseFloat(p.rate) || 0, color: p.color || "#1a1a1a",
       budgetHours: p.budget_hours != null ? parseFloat(p.budget_hours) : null,
+      currency: p.currency || "CAD",
     })));
     setEntries((eData || []).map(e => ({
       id: e.id, projectId: e.project_id,
@@ -178,21 +179,24 @@ function useStore(user) {
         rate: proj.rate || 0,
         color: proj.color || "#1a1a1a",
         budget_hours: proj.budgetHours ?? null,
+        currency: proj.currency || "CAD",
       }).select().single();
       if (error) { setError(error.message); return; }
       setProjects((ps) => [...ps, {
         id: data.id, name: data.name, client: data.client || "", rate: parseFloat(data.rate) || 0, color: data.color,
         budgetHours: data.budget_hours != null ? parseFloat(data.budget_hours) : null,
+        currency: data.currency || "CAD",
       }]);
     },
     updateProject: async (id, patch) => {
       setProjects((ps) => ps.map((p) => p.id === id ? { ...p, ...patch } : p)); // optimistic
       const dbPatch = {};
-      if ("name"   in patch) dbPatch.name   = patch.name;
-      if ("client" in patch) dbPatch.client = patch.client;
-      if ("rate"   in patch) dbPatch.rate   = patch.rate;
-      if ("color"  in patch) dbPatch.color  = patch.color;
-      if ("budgetHours" in patch) dbPatch.budget_hours = patch.budgetHours;
+      if ("name"       in patch) dbPatch.name         = patch.name;
+      if ("client"     in patch) dbPatch.client       = patch.client;
+      if ("rate"       in patch) dbPatch.rate         = patch.rate;
+      if ("color"      in patch) dbPatch.color        = patch.color;
+      if ("budgetHours"in patch) dbPatch.budget_hours = patch.budgetHours;
+      if ("currency"   in patch) dbPatch.currency     = patch.currency;
       const { error } = await sb.from("projects").update(dbPatch).eq("id", id);
       if (error) { setError(error.message); refresh(); }
     },

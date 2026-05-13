@@ -2,6 +2,17 @@
 
 const ACCENT = "#E55B13";
 
+// ── Currency helpers ──
+// Approximate rates to CAD (update periodically)
+const FX_TO_CAD = { CAD: 1, USD: 1.38, ILS: 0.38 };
+const CURRENCIES = ["CAD", "USD", "ILS"];
+function fxSymbol(code) { return code === "ILS" ? "₪" : "$"; }
+function toCAD(amount, currency) { return amount * (FX_TO_CAD[currency] || 1); }
+function fmtMoney(amount, currency) {
+  const sym = fxSymbol(currency);
+  return `${sym}${Math.round(amount).toLocaleString()}`;
+}
+
 function useTheme(dark) {
   return React.useMemo(() => ({
     bg: dark ? "#0e0e10" : "#ece8e0",
@@ -380,13 +391,13 @@ function NowView({ state, actions, theme, now, placedBlocks, onUpdateBlocks, edi
 // ═══════════════════════════════════════════════════════════
 function ProjectsView({ state, actions, theme }) {
   const [adding, setAdding] = React.useState(false);
-  const [draft, setDraft] = React.useState({ name: "", client: "", rate: state.defaultRate, budgetHours: "" });
+  const [draft, setDraft] = React.useState({ name: "", client: "", rate: state.defaultRate, budgetHours: "", currency: "CAD" });
   const [editingId, setEditingId] = React.useState(null);
   const [editDraft, setEditDraft] = React.useState({});
 
   const startEdit = (p) => {
     setEditingId(p.id);
-    setEditDraft({ name: p.name, client: p.client || "", rate: p.rate || 0, budgetHours: p.budgetHours != null ? String(p.budgetHours) : "" });
+    setEditDraft({ name: p.name, client: p.client || "", rate: p.rate || 0, budgetHours: p.budgetHours != null ? String(p.budgetHours) : "", currency: p.currency || "CAD" });
   };
   const saveEdit = (id) => {
     if (!editDraft.name.trim()) return;
@@ -403,8 +414,11 @@ function ProjectsView({ state, actions, theme }) {
   for (const e of state.entries) {
     totals[e.projectId] = (totals[e.projectId] || 0) + entryDuration(e);
   }
-  const totalEarned = state.projects.reduce((sum, p) => sum + ((totals[p.id] || 0) / 3600000) * p.rate, 0);
-  const totalMs     = Object.values(totals).reduce((a, b) => a + b, 0);
+  const totalEarnedCAD = state.projects.reduce((sum, p) => {
+    const earned = ((totals[p.id] || 0) / 3600000) * p.rate;
+    return sum + toCAD(earned, p.currency || "CAD");
+  }, 0);
+  const totalMs = Object.values(totals).reduce((a, b) => a + b, 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -419,12 +433,12 @@ function ProjectsView({ state, actions, theme }) {
 
       {/* Earnings summary */}
       <Tile theme={theme} bg={theme.ink} fg={theme.onInk} pad="18px 20px">
-        <Label color="rgba(255,255,255,0.45)">Total earned</Label>
+        <Label color="rgba(255,255,255,0.45)">Total earned · CAD</Label>
         <div style={{ fontSize: 42, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, marginTop: 10, fontVariantNumeric: "tabular-nums" }}>
-          ${totalEarned.toFixed(0)}
+          ${Math.round(totalEarnedCAD).toLocaleString()}
         </div>
         <div style={{ fontSize: 11, opacity: 0.5, marginTop: 6 }}>
-          {fmtHM(totalMs) || "0m"} · {state.projects.length} {state.projects.length === 1 ? "project" : "projects"}
+          {fmtHM(totalMs) || "0m"} · {state.projects.length} {state.projects.length === 1 ? "project" : "projects"} · converted at live rates
         </div>
       </Tile>
 
@@ -435,13 +449,14 @@ function ProjectsView({ state, actions, theme }) {
             <Field theme={theme} label="Client" value={draft.client} onChange={(v) => setDraft({ ...draft, client: v })} placeholder="Northwind Studio" />
             <Field theme={theme} label="Rate ($/hr)" type="number" value={draft.rate} onChange={(v) => setDraft({ ...draft, rate: parseFloat(v) || 0 })} />
             <Field theme={theme} label="Hour budget (optional)" type="number" value={draft.budgetHours} onChange={(v) => setDraft({ ...draft, budgetHours: v })} placeholder="e.g. 20" />
+            <CurrencyPicker theme={theme} value={draft.currency} onChange={(c) => setDraft({ ...draft, currency: c })} />
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <button onClick={() => { setAdding(false); setDraft({ name: "", client: "", rate: state.defaultRate, budgetHours: "" }); }} style={btnGhost(theme)}>Cancel</button>
+              <button onClick={() => { setAdding(false); setDraft({ name: "", client: "", rate: state.defaultRate, budgetHours: "", currency: "CAD" }); }} style={btnGhost(theme)}>Cancel</button>
               <button onClick={() => {
                 if (!draft.name.trim()) return;
                 actions.addProject({ ...draft, budgetHours: draft.budgetHours !== "" ? parseFloat(draft.budgetHours) : null });
                 setAdding(false);
-                setDraft({ name: "", client: "", rate: state.defaultRate, budgetHours: "" });
+                setDraft({ name: "", client: "", rate: state.defaultRate, budgetHours: "", currency: "CAD" });
               }} style={btnPrimary(theme)}>Add project</button>
             </div>
           </div>
@@ -460,6 +475,7 @@ function ProjectsView({ state, actions, theme }) {
               <Field theme={theme} label="Client" value={editDraft.client} onChange={(v) => setEditDraft({ ...editDraft, client: v })} />
               <Field theme={theme} label="Rate ($/hr)" type="number" value={editDraft.rate} onChange={(v) => setEditDraft({ ...editDraft, rate: v })} />
               <Field theme={theme} label="Hour budget (optional)" type="number" value={editDraft.budgetHours} onChange={(v) => setEditDraft({ ...editDraft, budgetHours: v })} placeholder="e.g. 20" />
+              <CurrencyPicker theme={theme} value={editDraft.currency || "CAD"} onChange={(c) => setEditDraft({ ...editDraft, currency: c })} />
               <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                 <button onClick={() => setEditingId(null)} style={btnGhost(theme)}>Cancel</button>
                 <button onClick={() => saveEdit(p.id)} style={btnPrimary(theme)}>Save</button>
@@ -468,6 +484,7 @@ function ProjectsView({ state, actions, theme }) {
           </Tile>
         );
 
+        const currency = p.currency || "CAD";
         const earned = (total / 3600000) * p.rate;
         return (
           <Tile key={p.id} theme={theme}>
@@ -483,15 +500,15 @@ function ProjectsView({ state, actions, theme }) {
                 </div>
                 {/* Client / rate */}
                 <div style={{ fontSize: 12, color: theme.muted, marginTop: 3 }}>
-                  {p.client} · ${p.rate}/hr
+                  {p.client} · {fxSymbol(currency)}{p.rate} {currency}/hr
                 </div>
                 {/* Stats row */}
                 <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
                   <div>
                     <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
-                      ${earned.toFixed(0)}
+                      {fmtMoney(earned, currency)}
                     </div>
-                    <div style={{ fontSize: 10.5, color: theme.muted, marginTop: 1 }}>earned</div>
+                    <div style={{ fontSize: 10.5, color: theme.muted, marginTop: 1 }}>{currency} earned</div>
                   </div>
                   <div style={{ width: 1, background: theme.line }} />
                   <div>
@@ -775,6 +792,25 @@ function HistoryView({ state, actions, theme }) {
 }
 
 // ── small UI helpers ──
+function CurrencyPicker({ theme, value, onChange }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, color: theme.muted }}>Currency</span>
+      <div style={{ display: "flex", gap: 6 }}>
+        {CURRENCIES.map((c) => (
+          <button key={c} onClick={() => onChange(c)} type="button" style={{
+            flex: 1, height: 36, border: `1px solid ${theme.line}`,
+            background: value === c ? theme.ink : "transparent",
+            color: value === c ? theme.onInk : theme.text,
+            borderRadius: 8, fontSize: 13, fontWeight: 600,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>{c}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Field({ theme, label, value, onChange, type = "text", placeholder, autoFocus }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
