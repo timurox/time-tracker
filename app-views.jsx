@@ -406,6 +406,7 @@ function ProjectsView({ state, actions, theme }) {
       client: editDraft.client,
       rate: parseFloat(editDraft.rate) || 0,
       budgetHours: editDraft.budgetHours !== "" ? parseFloat(editDraft.budgetHours) : null,
+      currency: editDraft.currency || "CAD",
     });
     setEditingId(null);
   };
