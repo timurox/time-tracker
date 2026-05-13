@@ -473,6 +473,7 @@ function ProjectsView({ state, actions, theme }) {
           <Tile key={p.id} theme={theme}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ minWidth: 0, flex: 1 }}>
+                {/* Project name row */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ width: 10, height: 10, borderRadius: 3, background: p.color }} />
                   <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>{p.name}</div>
@@ -480,16 +481,34 @@ function ProjectsView({ state, actions, theme }) {
                     <span style={{ fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600, color: theme.accent, marginLeft: 4 }}>● Live</span>
                   )}
                 </div>
-                <div style={{ fontSize: 12, color: theme.muted, marginTop: 4 }}>
-                  {p.client} · ${p.rate}/hr · {fmtHM(total) || "0m"} · <span style={{ color: theme.text, fontWeight: 500 }}>${earned.toFixed(0)} earned</span>
+                {/* Client / rate */}
+                <div style={{ fontSize: 12, color: theme.muted, marginTop: 3 }}>
+                  {p.client} · ${p.rate}/hr
                 </div>
+                {/* Stats row */}
+                <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+                      ${earned.toFixed(0)}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: theme.muted, marginTop: 1 }}>earned</div>
+                  </div>
+                  <div style={{ width: 1, background: theme.line }} />
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+                      {fmtHM(total) || "0m"}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: theme.muted, marginTop: 1 }}>logged</div>
+                  </div>
+                </div>
+                {/* Budget bar */}
                 {p.budgetHours != null && (() => {
                   const usedH = total / 3600000;
                   const pct = Math.min(1, usedH / p.budgetHours);
                   const over = usedH > p.budgetHours;
                   const barColor = over ? "#d44" : pct >= 0.8 ? "#e8a23a" : theme.accent;
                   return (
-                    <div style={{ marginTop: 8 }}>
+                    <div style={{ marginTop: 10 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: theme.muted, marginBottom: 4 }}>
                         <span>Budget</span>
                         <span style={{ color: over ? "#d44" : theme.muted, fontVariantNumeric: "tabular-nums" }}>
