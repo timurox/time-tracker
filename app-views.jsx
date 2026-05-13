@@ -403,6 +403,8 @@ function ProjectsView({ state, actions, theme }) {
   for (const e of state.entries) {
     totals[e.projectId] = (totals[e.projectId] || 0) + entryDuration(e);
   }
+  const totalEarned = state.projects.reduce((sum, p) => sum + ((totals[p.id] || 0) / 3600000) * p.rate, 0);
+  const totalMs     = Object.values(totals).reduce((a, b) => a + b, 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -414,6 +416,17 @@ function ProjectsView({ state, actions, theme }) {
           cursor: "pointer", fontFamily: "inherit",
         }}>+ New</button>
       </div>
+
+      {/* Earnings summary */}
+      <Tile theme={theme} bg={theme.ink} fg={theme.onInk} pad="18px 20px">
+        <Label color="rgba(255,255,255,0.45)">Total earned</Label>
+        <div style={{ fontSize: 42, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, marginTop: 10, fontVariantNumeric: "tabular-nums" }}>
+          ${totalEarned.toFixed(0)}
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.5, marginTop: 6 }}>
+          {fmtHM(totalMs) || "0m"} · {state.projects.length} {state.projects.length === 1 ? "project" : "projects"}
+        </div>
+      </Tile>
 
       {adding && (
         <Tile theme={theme}>
@@ -455,6 +468,7 @@ function ProjectsView({ state, actions, theme }) {
           </Tile>
         );
 
+        const earned = (total / 3600000) * p.rate;
         return (
           <Tile key={p.id} theme={theme}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -467,7 +481,7 @@ function ProjectsView({ state, actions, theme }) {
                   )}
                 </div>
                 <div style={{ fontSize: 12, color: theme.muted, marginTop: 4 }}>
-                  {p.client} · ${p.rate}/hr · {fmtHM(total) || "0m"} used
+                  {p.client} · ${p.rate}/hr · {fmtHM(total) || "0m"} · <span style={{ color: theme.text, fontWeight: 500 }}>${earned.toFixed(0)} earned</span>
                 </div>
                 {p.budgetHours != null && (() => {
                   const usedH = total / 3600000;
